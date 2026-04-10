@@ -1,0 +1,147 @@
+import java.sql.*;
+import java.time.LocalTime;
+
+public class DatabaseConnection {
+    private static final String URL = "jdbc:sqlite:C:\\Users\\Reden\\IdeaProjects\\sql\\src\\coworking.db";
+
+    private DatabaseConnection() {}
+
+    public static Connection connect() throws SQLException {
+        return DriverManager.getConnection(URL);
+    }
+
+    private static int executeUpdate(String sql, Object... params) throws SQLException {
+        try (Connection conn = connect();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            bindParams(stmt, params);
+            return stmt.executeUpdate();
+        }
+    }
+
+    private static <T> T executeQuery(String sql, ResultSetHandler<T> handler, Object... params) throws SQLException {
+        try (Connection conn = connect();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            bindParams(stmt, params);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return handler.handle(rs);
+            }
+        }
+    }
+
+    private static void bindParams(PreparedStatement stmt, Object... params) throws SQLException {
+        if (params == null) return;
+        for (int i = 0; i < params.length; i++) {
+            stmt.setObject(i + 1, params[i]);
+        }
+    }
+
+    @FunctionalInterface
+    private interface ResultSetHandler<T> {
+        T handle(ResultSet rs) throws SQLException;
+    }
+
+    public static boolean createUser(User user) {
+        String sql = "INSERT INTO users(username,password) VALUES(?,?)";
+        try {
+            int rows = executeUpdate(sql, user.getUSERNAME(), user.getPASSWORD());
+            return rows > 0;
+        } catch (SQLException e) {
+            return false;
+        }
+    }
+
+    public static boolean login(String username, String password) {
+        String sql = "SELECT 1 FROM users WHERE username=? AND password=?";
+        try {
+            return executeQuery(sql, rs -> rs.next(), username, password);
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+    // Booking-related methods
+    public static boolean reserve(Booking booking) {
+        String sql = "INSERT INTO bookings(username,type,date,time_in,time_out,status,room_number) VALUES(?,?,?,?,?,?,?)";
+        try {
+            int rows = executeUpdate(sql,
+                    booking.getUSERNAME(),
+                    booking.getTYPE(),
+                    booking.getDATE(),
+                    booking.getTIMEIN(),
+                    booking.getTIMEOUT(),
+                    booking.getSTATUS(),
+                    booking.getROOMNUMBER());
+            return rows > 0;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    public static void viewBookings(String username) {
+        String sql = "SELECT * FROM bookings WHERE username=?";
+        try {
+            executeQuery(sql, rs -> {
+                boolean empty = true;
+                while (rs.next()) {
+                    empty = false;
+                    System.out.println("Type: " + rs.getString("type") +
+                            " | Date: " + rs.getString("date") +
+                            " | Time In: " + rs.getString("time_in") +
+                            " | Time Out: " + rs.getString("time_out") +
+                            " | Room Number: " + rs.getInt("room_number") +
+                            " | Status: " + rs.getString("status"));
+                }
+                if (empty) System.out.println("No bookings found.");
+                return null;
+            }, username);
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static boolean cancelBooking(String type, String date, String timeIn, String timeOut, String username, int roomNumber) {
+        String sql = "DELETE FROM bookings WHERE username=? AND type=? AND date=? AND time_in=? AND time_out=? AND room_number=?";
+        try {
+            int rows = executeUpdate(sql, username, type, date, timeIn, timeOut, roomNumber);
+            return rows > 0;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    public static void checkAvailability(String type, String date, String timeIn, String timeOut) {
+        int max = (type.equals("workspace")) ? 20 : 10;
+        System.out.println("Available numbers:");
+        for (int i = 1; i <= max; i++) {
+            if (isRoomAvailable(type, date, timeIn, timeOut, i)) {
+                System.out.print(i + " ");
+            }
+        }
+        System.out.println();
+    }
+
+    public static boolean isRoomAvailable(String type, String date, String timeIn, String timeOut, int roomNumber) {
+        String sql = "SELECT time_in, time_out FROM bookings WHERE type=? AND date=? AND room_number=? AND status='reserved'";
+        try {
+            return executeQuery(sql, rs -> {
+                LocalTime newStart = LocalTime.parse(timeIn);
+                LocalTime newEnd = LocalTime.parse(timeOut);
+
+                while (rs.next()) {
+                    LocalTime existingStart = LocalTime.parse(rs.getString("time_in"));
+                    LocalTime existingEnd = LocalTime.parse(rs.getString("time_out"));
+
+                    if (newStart.isBefore(existingEnd) && newEnd.isAfter(existingStart)) {
+                        return false;
+                    }
+                }
+                return true;
+            }, type, date, roomNumber);
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+}
