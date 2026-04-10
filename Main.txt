@@ -1,0 +1,365 @@
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Random;
+import java.util.Scanner;
+
+public class Main {
+    static Random ran = new Random();
+
+    public static void main(String[] args){
+        Scanner sc = new Scanner(System.in);
+
+        String currentUser = "";
+        boolean logged = false;
+
+        int attempts = 0;
+
+        while(!logged && attempts < 5){
+            System.out.println("====Welcome====");
+            System.out.print("1. Login\n2. Create Account\nEnter your choice: ");
+
+            int choice;
+            try {
+                choice = Integer.parseInt(sc.nextLine().trim());
+            } catch (Exception e) {
+                System.out.println("Invalid input.");
+                continue;
+            }
+
+            if(choice==1){
+                System.out.print("\nUsername: ");
+                String u = sc.nextLine().trim();
+
+                System.out.print("Password: ");
+                String p = sc.nextLine().trim();
+
+                if(DatabaseConnection.login(u,p)){
+                    logged=true;
+                    currentUser=u;
+                    System.out.println("\nLogin Successful!");
+                }else{
+                    System.out.println("\nInvalid login.");
+                    attempts++;
+                }
+            }
+
+            if(choice==2){
+                System.out.print("\nUsername: ");
+                String u = sc.nextLine().trim();
+
+                System.out.print("Password: ");
+                String p = sc.nextLine().trim();
+
+                if(u.isEmpty() || p.isEmpty()){
+                    System.out.println("\nInvalid input.");
+                    continue;
+                }
+
+                if(u.length() > 50 || p.length() > 50){
+                    System.out.println("\nInput too long.");
+                    continue;
+                }
+
+                User user = new User.Builder()
+                        .setUSERNAME(u)
+                        .setPASSWORD(p)
+                        .build();
+
+                boolean created = DatabaseConnection.createUser(user);
+
+                if (created) System.out.println("\nAccount created.");
+                else System.out.println("\nUsername already exists.");
+            }
+        }
+
+        if(!logged){
+            System.out.println("Too many attempts.");
+            return;
+        }
+
+        while(true) {
+            System.out.println("\nSYSTEM MENU");
+            System.out.println("1 Reserve workspace\n2 Reserve meeting room\n3 Walk in booking" +
+                    "\n4 Check availability\n5 View bookings\n6 Cancel booking\n7 Exit");
+            System.out.print("Enter your choice: ");
+
+            int c;
+            try {
+                c = Integer.parseInt(sc.nextLine().trim());
+            } catch (Exception e) {
+                System.out.println("Invalid input.");
+                continue;
+            }
+
+            if (c == 1 || c == 2) {
+                String type = (c == 1) ? "workspace" : "meeting_room";
+
+                System.out.print("Date (YYYY-MM-DD): ");
+                String date = sc.nextLine().trim();
+                if (!Booking.isValidDate(date)) {
+                    System.out.println("Invalid date.");
+                    continue;
+                }
+
+                System.out.print("Time In (HH:mm): ");
+                String timeIn = sc.nextLine().trim();
+                if (!Booking.isValidTime(timeIn)) {
+                    System.out.println("Invalid time.");
+                    continue;
+                }
+
+                System.out.print("Time Out (HH:mm): ");
+                String timeOut = sc.nextLine().trim();
+                if (!Booking.isValidTime(timeOut)) {
+                    System.out.println("Invalid time.");
+                    continue;
+                }
+
+                if (LocalTime.parse(timeOut).isBefore(LocalTime.parse(timeIn))) {
+                    System.out.println("Time out must be after time in.");
+                    continue;
+                }
+
+                LocalDate today = LocalDate.now();
+                LocalTime now = LocalTime.now();
+
+                if (date.equals(today.toString())) {
+                    if (LocalTime.parse(timeIn).isBefore(now)) {
+                        System.out.println("Cannot book past time.");
+                        continue;
+                    }
+                }
+
+                int max = (type.equals("workspace")) ? 20 : 10;
+
+                System.out.println("Available numbers:");
+                for (int i = 1; i <= max; i++) {
+                    if (DatabaseConnection.isRoomAvailable(type, date, timeIn, timeOut, i)) {
+                        System.out.print("(" + i + "), ");
+                    }
+                }
+                System.out.println();
+
+                int roomNumber;
+                while (true) {
+                    System.out.print("Enter number (1-" + max + "): ");
+                    try {
+                        roomNumber = Integer.parseInt(sc.nextLine().trim());
+                    } catch (Exception e) {
+                        System.out.println("Invalid input.");
+                        continue;
+                    }
+
+                    if (roomNumber < 1 || roomNumber > max) {
+                        System.out.println("Invalid number.");
+                        continue;
+                    }
+
+                    if (!DatabaseConnection.isRoomAvailable(type, date, timeIn, timeOut, roomNumber)) {
+                        System.out.println("Not available.");
+                        continue;
+                    }
+                    break;
+                }
+
+                Booking booking = new Booking.Builder()
+                        .setUSERNAME(currentUser)
+                        .setTYPE(type)
+                        .setDATE(date)
+                        .setTIMEIN(timeIn)
+                        .setTIMEOUT(timeOut)
+                        .setSTATUS("reserved")
+                        .setROOMNUMBER(roomNumber)
+                        .build();
+
+                boolean ok = DatabaseConnection.reserve(booking);
+                System.out.println(ok ? "Booking successful." : "Booking failed.");
+
+                askQuote(sc);
+            }
+
+            if (c == 3) {
+                System.out.println("1 Workspace\n2 Meeting Room");
+                System.out.print("Enter your choice: ");
+
+                int choice;
+                try {
+                    choice = Integer.parseInt(sc.nextLine().trim());
+                } catch (Exception e) {
+                    System.out.println("Invalid input.");
+                    continue;
+                }
+
+                if(choice != 1 && choice != 2){
+                    System.out.println("Invalid input.");
+                    continue;
+                }
+
+                String type = (choice == 1) ? "workspace" : "meeting_room";
+                int max = (type.equals("workspace")) ? 20 : 10;
+
+                String date = LocalDate.now().toString();
+                String timeIn = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"));
+
+                String tempOut = LocalTime.parse(timeIn)
+                        .plusHours(1)
+                        .format(DateTimeFormatter.ofPattern("HH:mm"));
+
+                System.out.println("Available numbers:");
+                for (int i = 1; i <= max; i++) {
+                    if (DatabaseConnection.isRoomAvailable(type, date, timeIn, tempOut, i)) {
+                        System.out.print("(" + i + "), ");
+                    }
+                }
+                System.out.println();
+
+                int roomNumber;
+                while (true) {
+                    System.out.print("Enter number (1-" + max + "): ");
+                    try {
+                        roomNumber = Integer.parseInt(sc.nextLine().trim());
+                    } catch (Exception e) {
+                        System.out.println("Invalid input.");
+                        continue;
+                    }
+
+                    if (roomNumber < 1 || roomNumber > max) {
+                        System.out.println("Invalid number.");
+                        continue;
+                    }
+                    break;
+                }
+
+                System.out.print("Time Out (HH:mm): ");
+                String timeOut = sc.nextLine().trim();
+
+                if (!Booking.isValidTime(timeOut)) {
+                    System.out.println("Invalid time.");
+                    continue;
+                }
+
+                if (LocalTime.parse(timeOut).isBefore(LocalTime.parse(timeIn))) {
+                    System.out.println("Time out must be after current time.");
+                    continue;
+                }
+
+                if (!DatabaseConnection.isRoomAvailable(type, date, timeIn, timeOut, roomNumber)) {
+                    System.out.println("Not available.");
+                    continue;
+                }
+
+                Booking booking = new Booking.Builder()
+                        .setUSERNAME(currentUser)
+                        .setTYPE(type)
+                        .setDATE(date)
+                        .setTIMEIN(timeIn)
+                        .setTIMEOUT(timeOut)
+                        .setSTATUS("reserved")
+                        .setROOMNUMBER(roomNumber)
+                        .build();
+
+                boolean ok = DatabaseConnection.reserve(booking);
+                System.out.println(ok ? "Booking successful." : "Booking failed.");
+
+                askQuote(sc);
+            }
+
+            if(c==4){
+                System.out.print("Type (workspace/meeting_room): ");
+                String type = sc.nextLine().trim().toLowerCase();
+
+                if(!type.equals("workspace") && !type.equals("meeting_room")){
+                    System.out.println("Invalid input.");
+                    continue;
+                }
+
+                System.out.print("Date: ");
+                String date = sc.nextLine().trim();
+
+                if (!Booking.isValidDate(date)) {
+                    System.out.println("Invalid date.");
+                    continue;
+                }
+
+                System.out.print("Time In: ");
+                String timeIn = sc.nextLine().trim();
+
+                System.out.print("Time Out: ");
+                String timeOut = sc.nextLine().trim();
+
+                if (!Booking.isValidTime(timeIn) || !Booking.isValidTime(timeOut)) {
+                    System.out.println("Invalid time.");
+                    continue;
+                }
+
+                DatabaseConnection.checkAvailability(type, date, timeIn, timeOut);
+            }
+
+            if(c==5){
+                DatabaseConnection.viewBookings(currentUser);
+            }
+
+            if(c==6){
+                System.out.print("Type: ");
+                String type = sc.nextLine().trim().toLowerCase();
+
+                if(!type.equals("workspace") && !type.equals("meeting_room")){
+                    System.out.println("Invalid input.");
+                    continue;
+                }
+
+                System.out.print("Date: ");
+                String date = sc.nextLine().trim();
+
+                System.out.print("Time In: ");
+                String timeIn = sc.nextLine().trim();
+
+                System.out.print("Time Out: ");
+                String timeOut = sc.nextLine().trim();
+
+                if (!Booking.isValidTime(timeIn) || !Booking.isValidTime(timeOut)) {
+                    System.out.println("Invalid time.");
+                    continue;
+                }
+
+                System.out.print("Room Number: ");
+                int room;
+                try {
+                    room = Integer.parseInt(sc.nextLine().trim());
+                } catch (Exception e) {
+                    System.out.println("Invalid number.");
+                    continue;
+                }
+
+                boolean cancelled = DatabaseConnection.cancelBooking(type, date, timeIn, timeOut, currentUser, room);
+                System.out.println(cancelled ? "Booking cancelled." : "Booking not found.");
+            }
+
+            if(c==7) break;
+        }
+
+        System.out.println("Thank you!");
+    }
+
+    public static void askQuote(Scanner sc){
+        System.out.print("Do you want a motivational quote? (yes/no): ");
+        String ans = sc.nextLine().trim();
+        if (ans.equalsIgnoreCase("yes")) {
+            System.out.println("\n" + getRandomQuote());
+        }
+    }
+
+    public static String getRandomQuote(){
+        String[] quotes = {
+                "Believe you can and you're halfway there.",
+                "Push yourself, no one else will.",
+                "Make each day your masterpiece.",
+                "Dream it. Do it.",
+                "Trust the timing of your life.",
+                "Stay strong and keep going.",
+                "Change the world by being yourself."
+        };
+        return quotes[ran.nextInt(quotes.length)];
+    }
+}
