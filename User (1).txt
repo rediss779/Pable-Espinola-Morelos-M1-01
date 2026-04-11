@@ -1,0 +1,21 @@
+public class User {
+    private final String USERNAME;
+    private final String PASSWORD;
+
+    private User(Builder builder){
+        this.USERNAME = builder.USERNAME;
+        this.PASSWORD = builder.PASSWORD;
+    }
+
+    public String getUSERNAME(){ return USERNAME; }
+    public String getPASSWORD(){ return PASSWORD; }
+
+    public static class Builder{
+        private String USERNAME;
+        private String PASSWORD;
+
+        public Builder setUSERNAME(String username){ this.USERNAME = username; return this; }
+        public Builder setPASSWORD(String password){ this.PASSWORD = password; return this; }
+        public User build(){ return new User(this); }
+    }
+}
