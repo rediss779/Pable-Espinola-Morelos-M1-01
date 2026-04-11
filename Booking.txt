@@ -1,0 +1,65 @@
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+
+public class Booking {
+    private final int ROOMNUMBER;
+    private final String USERNAME;
+    private final String TYPE;
+    private final String DATE;
+    private final String TIMEIN;
+    private final String TIMEOUT;
+    private final String STATUS;
+
+    private Booking(Builder builder){
+        this.ROOMNUMBER = builder.ROOMNUMBER;
+        this.USERNAME = builder.USERNAME;
+        this.TYPE = builder.TYPE;
+        this.DATE = builder.DATE;
+        this.TIMEIN = builder.TIMEIN;
+        this.TIMEOUT = builder.TIMEOUT;
+        this.STATUS = builder.STATUS;
+    }
+
+    public int getROOMNUMBER(){ return ROOMNUMBER; }
+    public String getUSERNAME(){ return USERNAME; }
+    public String getTYPE(){ return TYPE; }
+    public String getDATE(){ return DATE; }
+    public String getTIMEIN(){ return TIMEIN; }
+    public String getTIMEOUT(){ return TIMEOUT; }
+    public String getSTATUS(){ return STATUS; }
+
+    public static boolean isValidDate(String input) {
+        try {
+            LocalDate date = LocalDate.parse(input, DateTimeFormatter.ISO_DATE);
+            return !date.isBefore(LocalDate.now());
+        } catch (DateTimeParseException e) { return false; }
+    }
+
+    public static boolean isValidTime(String input) {
+        try {
+            LocalTime.parse(input, DateTimeFormatter.ofPattern("HH:mm"));
+            return true;
+        } catch (DateTimeParseException e) { return false; }
+    }
+
+    public static class Builder {
+        private int ROOMNUMBER = 0;
+        private String USERNAME;
+        private String TYPE;
+        private String DATE;
+        private String TIMEIN;
+        private String TIMEOUT;
+        private String STATUS;
+
+        public Builder setROOMNUMBER(int roomNumber){ this.ROOMNUMBER = roomNumber; return this; }
+        public Builder setUSERNAME(String username){ this.USERNAME=username; return this; }
+        public Builder setTYPE(String type){ this.TYPE=type; return this; }
+        public Builder setDATE(String date){ this.DATE=date; return this; }
+        public Builder setTIMEIN(String timeIn){ this.TIMEIN=timeIn; return this; }
+        public Builder setTIMEOUT(String timeOut){ this.TIMEOUT=timeOut; return this; }
+        public Builder setSTATUS(String status){ this.STATUS=status; return this; }
+        public Booking build(){ return new Booking(this); }
+    }
+}
