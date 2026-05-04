@@ -1,0 +1,16 @@
+public class CashPayment extends PaymentFramework {
+    public CashPayment(double amount, double discount) {
+        super(amount, discount);
+    }
+
+    @Override
+    public boolean validatePayment() {
+        return true;
+    }
+
+    @Override
+    public void processInvoice() {
+        System.out.println("Processing cash payment...");
+        super.processInvoice();
+    }
+}
