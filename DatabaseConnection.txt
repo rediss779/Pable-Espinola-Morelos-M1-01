@@ -1,8 +1,11 @@
 import java.sql.*;
-import java.time.LocalTime;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 public class DatabaseConnection {
-    private static final String URL = "jdbc:sqlite:C:\\Users\\Reden\\IdeaProjects\\sql\\src\\coworking.db";
+    private static final String URL = "jdbc:sqlite:C:\\Users\\Reden\\IdeaProjects\\sql\\coworking.db";
 
     private DatabaseConnection() {}
 
@@ -41,11 +44,26 @@ public class DatabaseConnection {
     }
 
     public static boolean createUser(User user) {
-        String sql = "INSERT INTO users(username,password) VALUES(?,?)";
+        String username = user.getUSERNAME() == null ? "" : user.getUSERNAME().trim();
+        String password = user.getPASSWORD() == null ? "" : user.getPASSWORD().trim();
+        String category = user.getCATEGORY() == null ? "normal" : user.getCATEGORY();
+
+        if (username.isEmpty() || password.isEmpty()) return false;
+
+        String check = "SELECT 1 FROM users WHERE lower(username)=lower(?)";
         try {
-            int rows = executeUpdate(sql, user.getUSERNAME(), user.getPASSWORD());
+            boolean exists = executeQuery(check, rs -> rs.next(), username);
+            if (exists) return false;
+        } catch (SQLException e) {
+            System.out.println("Invalid");
+        }
+
+        String sql = "INSERT INTO users(username,password,category) VALUES(?,?,?)";
+        try {
+            int rows = executeUpdate(sql, username, password, category);
             return rows > 0;
         } catch (SQLException e) {
+            System.out.println("Invalid");
             return false;
         }
     }
@@ -55,11 +73,80 @@ public class DatabaseConnection {
         try {
             return executeQuery(sql, rs -> rs.next(), username, password);
         } catch (SQLException e) {
-            e.printStackTrace();
+            System.out.println("Invalid");
             return false;
         }
     }
-    // Booking-related methods
+
+    public static void setUserCategory(String username, String category) {
+        String sql = "UPDATE users SET category=? WHERE username=?";
+        try {
+            executeUpdate(sql, category, username);
+        } catch (SQLException e) {
+            System.out.println("Invalid");
+        }
+    }
+
+    public static String getUserCategory(String username) {
+        String sql = "SELECT category FROM users WHERE username=?";
+        try {
+            return executeQuery(sql, rs -> rs.next() ? rs.getString("category") : "normal", username);
+        } catch (SQLException e) {
+            System.out.println("Invalid");
+            return "normal";
+        }
+    }
+
+    // view all users (admin)
+    public static void viewAllUsers() {
+        String sql = "SELECT id, username, password, category FROM users ORDER BY id";
+        try {
+            executeQuery(sql, rs -> {
+                boolean empty = true;
+                while (rs.next()) {
+                    empty = false;
+                    System.out.println(" | User: " + rs.getString("username") +
+                            " | Password: " + rs.getString("password") +
+                            " | Category: " + rs.getString("category"));
+                }
+                if (empty) System.out.println("No users found.");
+                return null;
+            });
+        } catch (SQLException e) {
+            System.out.println("Invalid");
+        }
+    }
+
+    public static String getCompanyId() {
+        String sql = "SELECT value FROM company_settings WHERE key='company_id'";
+        try {
+            return executeQuery(sql, rs -> rs.next() ? rs.getString("value") : null);
+        } catch (SQLException e) {
+            System.out.println("Invalid");
+            return null;
+        }
+    }
+
+    public static double getPricePerHour() {
+        String sql = "SELECT value FROM company_settings WHERE key='price_per_hour'";
+        try {
+            String val = executeQuery(sql, rs -> rs.next() ? rs.getString("value") : null);
+            if (val == null) return 200.0;
+            return Double.parseDouble(val);
+        } catch (SQLException | NumberFormatException e) {
+            return 200.0;
+        }
+    }
+
+    public static void setPricePerHour(double price) {
+        String sql = "INSERT OR REPLACE INTO company_settings(key, value) VALUES('price_per_hour', ?)";
+        try {
+            executeUpdate(sql, String.valueOf(price));
+        } catch (SQLException e) {
+            System.out.println("Invalid");
+        }
+    }
+
     public static boolean reserve(Booking booking) {
         String sql = "INSERT INTO bookings(username,type,date,time_in,time_out,status,room_number) VALUES(?,?,?,?,?,?,?)";
         try {
@@ -73,75 +160,308 @@ public class DatabaseConnection {
                     booking.getROOMNUMBER());
             return rows > 0;
         } catch (SQLException e) {
-            e.printStackTrace();
+            System.out.println("Invalid");
             return false;
         }
     }
 
+    public static Booking getBookingById(int bookingId) {
+        String sql = "SELECT id, username, type, date, time_in, time_out, status, room_number, IFNULL(total_amount,0.0) AS total_amount FROM bookings WHERE id = ?";
+        try {
+            return executeQuery(sql, rs -> {
+                if (!rs.next()) return null;
+                return new Booking.Builder()
+                        .setID(rs.getInt("id"))
+                        .setUSERNAME(rs.getString("username"))
+                        .setTYPE(rs.getString("type"))
+                        .setDATE(rs.getString("date"))
+                        .setTIMEIN(rs.getString("time_in"))
+                        .setTIMEOUT(rs.getString("time_out"))
+                        .setSTATUS(rs.getString("status"))
+                        .setROOMNUMBER(rs.getInt("room_number"))
+                        .setTOTALAMOUNT(rs.getDouble("total_amount"))
+                        .build();
+            }, bookingId);
+        } catch (SQLException e) {
+            System.out.println("Invalid");
+            return null;
+        }
+    }
+
+    public static String getNextBookingStart(String type, String date, int roomNumber, String afterTime, int excludeBookingId) {
+        String sql = "SELECT time_in FROM bookings WHERE type = ? AND date = ? AND room_number = ? AND id != ? AND time_in > ? ORDER BY time_in ASC LIMIT 1";
+        try {
+            return executeQuery(sql, rs -> rs.next() ? rs.getString("time_in") : null, type, date, roomNumber, excludeBookingId, afterTime);
+        } catch (SQLException e) {
+            System.out.println("Invalid");
+            return null;
+        }
+    }
+
+    public static boolean updateBookingTimeOutAndTotals(int bookingId, String newTimeOut, Double newTotalAmount, Double paid, Double change) {
+        StringBuilder sb = new StringBuilder("UPDATE bookings SET time_out = ?");
+        if (newTotalAmount != null) sb.append(", total_amount = ?");
+        if (paid != null) sb.append(", paid = ?");
+        if (change != null) sb.append(", change_amount = ?");
+        sb.append(" WHERE id = ?");
+        try {
+            if (newTotalAmount == null && paid == null && change == null) {
+                int rows = executeUpdate(sb.toString(), newTimeOut, bookingId);
+                return rows > 0;
+            } else if (paid == null && change == null) {
+                int rows = executeUpdate(sb.toString(), newTimeOut, newTotalAmount, bookingId);
+                return rows > 0;
+            } else if (change == null) {
+                int rows = executeUpdate(sb.toString(), newTimeOut, newTotalAmount, paid, bookingId);
+                return rows > 0;
+            } else {
+                int rows = executeUpdate(sb.toString(), newTimeOut, newTotalAmount, paid, change, bookingId);
+                return rows > 0;
+            }
+        } catch (SQLException e) {
+            System.out.println("Invalid");
+            return false;
+        }
+    }
+
+    public static void recordPayment(String username, String type, String date, String timeIn, String timeOut, int roomNumber, double paid, double change, double totalAmount) {
+        String insertPayment = "INSERT INTO payments(username,type,date,time_in,time_out,room_number,paid,change_amount,created_at) VALUES(?,?,?,?,?,?,?,?,?)";
+        try {
+            executeUpdate(insertPayment,
+                    username, type, date, timeIn, timeOut, roomNumber, paid, change,
+                    LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        } catch (SQLException e) {
+            System.out.println("Invalid");
+        }
+
+        double total = roundTwoDecimals(totalAmount);
+        if (total < 0) total = 0.0;
+
+        String updateBooking = "UPDATE bookings SET paid = ?, change_amount = ?, total_amount = ? WHERE username = ? AND type = ? AND date = ? AND time_in = ? AND time_out = ? AND room_number = ?";
+        try {
+            executeUpdate(updateBooking, paid, change, total, username, type, date, timeIn, timeOut, roomNumber);
+        } catch (SQLException e) {
+            System.out.println("Invalid");
+        }
+    }
+
     public static void viewBookings(String username) {
-        String sql = "SELECT * FROM bookings WHERE username=?";
+        String sql = "SELECT id, type, date, time_in, time_out, room_number, status, IFNULL(paid,0.0) AS paid, IFNULL(change_amount,0.0) AS change_amount, IFNULL(total_amount,0.0) AS total_amount FROM bookings WHERE username = ? ORDER BY date DESC, time_in DESC, id DESC";
         try {
             executeQuery(sql, rs -> {
                 boolean empty = true;
                 while (rs.next()) {
                     empty = false;
-                    System.out.println("Type: " + rs.getString("type") +
-                            " | Date: " + rs.getString("date") +
-                            " | Time In: " + rs.getString("time_in") +
-                            " | Time Out: " + rs.getString("time_out") +
-                            " | Room Number: " + rs.getInt("room_number") +
-                            " | Status: " + rs.getString("status"));
+                    System.out.println("Booking ID: " + rs.getInt("id"));
+                    System.out.println("  Type      : " + rs.getString("type"));
+                    System.out.println("  Date      : " + rs.getString("date"));
+                    System.out.println("  Time In   : " + rs.getString("time_in"));
+                    System.out.println("  Time Out  : " + rs.getString("time_out"));
+                    System.out.println("  Room No.  : " + rs.getInt("room_number"));
+                    System.out.println("  Status    : " + rs.getString("status"));
+                    System.out.printf("  Paid      : %.2f%n", rs.getDouble("paid"));
+                    System.out.printf("  Change    : %.2f%n", rs.getDouble("change_amount"));
+                    System.out.printf("  Total     : %.2f%n", rs.getDouble("total_amount"));
+                    System.out.println("----------------------------------------");
                 }
                 if (empty) System.out.println("No bookings found.");
                 return null;
             }, username);
         } catch (SQLException e) {
-            e.printStackTrace();
+            System.out.println("Invalid");
         }
     }
 
-    public static boolean cancelBooking(String type, String date, String timeIn, String timeOut, String username, int roomNumber) {
-        String sql = "DELETE FROM bookings WHERE username=? AND type=? AND date=? AND time_in=? AND time_out=? AND room_number=?";
+    public static void viewAllBookings() {
+        String sql = "SELECT id, username, type, date, time_in, time_out, room_number, status, IFNULL(paid,0.0) AS paid, IFNULL(change_amount,0.0) AS change_amount, IFNULL(total_amount,0.0) AS total_amount FROM bookings ORDER BY date DESC, time_in DESC, id DESC";
         try {
-            int rows = executeUpdate(sql, username, type, date, timeIn, timeOut, roomNumber);
-            return rows > 0;
+            executeQuery(sql, rs -> {
+                boolean empty = true;
+                while (rs.next()) {
+                    empty = false;
+                    System.out.println("Booking ID: " + rs.getInt("id"));
+                    System.out.println("  User      : " + rs.getString("username"));
+                    System.out.println("  Type      : " + rs.getString("type"));
+                    System.out.println("  Date      : " + rs.getString("date"));
+                    System.out.println("  Time In   : " + rs.getString("time_in"));
+                    System.out.println("  Time Out  : " + rs.getString("time_out"));
+                    System.out.println("  Room No.  : " + rs.getInt("room_number"));
+                    System.out.println("  Status    : " + rs.getString("status"));
+                    System.out.printf("  Paid      : %.2f%n", rs.getDouble("paid"));
+                    System.out.printf("  Change    : %.2f%n", rs.getDouble("change_amount"));
+                    System.out.printf("  Total     : %.2f%n", rs.getDouble("total_amount"));
+                    System.out.println("----------------------------------------");
+                }
+                if (empty) System.out.println("No bookings found.");
+                return null;
+            });
         } catch (SQLException e) {
-            e.printStackTrace();
+            System.out.println("Invalid");
+        }
+    }
+
+    public static boolean isRoomAvailable(String type, String date, String timeIn, String timeOut, int roomNumber) {
+        String sql = "SELECT 1 FROM bookings WHERE type=? AND date=? AND room_number=? AND (" +
+                "(time_in < ? AND time_out > ?) OR " +
+                "(time_in >= ? AND time_in < ?)" +
+                ")";
+        try {
+            return !executeQuery(sql, rs -> rs.next(), type, date, roomNumber, timeOut, timeIn, timeIn, timeOut);
+        } catch (SQLException e) {
+            System.out.println("Invalid");
             return false;
         }
     }
 
     public static void checkAvailability(String type, String date, String timeIn, String timeOut) {
-        int max = (type.equals("workspace")) ? 20 : 10;
-        System.out.println("Available numbers:");
+        int max = type.equals("workspace") ? 20 : 10;
         for (int i = 1; i <= max; i++) {
             if (isRoomAvailable(type, date, timeIn, timeOut, i)) {
-                System.out.print(i + " ");
+                System.out.print("(" + i + "), ");
             }
         }
         System.out.println();
     }
 
-    public static boolean isRoomAvailable(String type, String date, String timeIn, String timeOut, int roomNumber) {
-        String sql = "SELECT time_in, time_out FROM bookings WHERE type=? AND date=? AND room_number=? AND status='reserved'";
+    public static boolean cancelBooking(String type, String date, String timeIn, String timeOut, String username, int roomNumber) {
+        String sql = "DELETE FROM bookings WHERE type=? AND date=? AND time_in=? AND time_out=? AND username=? AND room_number=?";
         try {
-            return executeQuery(sql, rs -> {
-                LocalTime newStart = LocalTime.parse(timeIn);
-                LocalTime newEnd = LocalTime.parse(timeOut);
-
-                while (rs.next()) {
-                    LocalTime existingStart = LocalTime.parse(rs.getString("time_in"));
-                    LocalTime existingEnd = LocalTime.parse(rs.getString("time_out"));
-
-                    if (newStart.isBefore(existingEnd) && newEnd.isAfter(existingStart)) {
-                        return false;
-                    }
-                }
-                return true;
-            }, type, date, roomNumber);
+            int rows = executeUpdate(sql, type, date, timeIn, timeOut, username, roomNumber);
+            return rows > 0;
         } catch (SQLException e) {
-            e.printStackTrace();
+            System.out.println("Invalid");
             return false;
         }
+    }
+
+    public static void addMaintenance(String desc, double cost, String addedBy) {
+        String sql = "INSERT INTO maintenance(description,cost,added_by,created_at) VALUES(?,?,?,?)";
+        try {
+            executeUpdate(sql, desc, cost, addedBy, LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        } catch (SQLException e) {
+            System.out.println("Invalid");
+        }
+    }
+
+    public static void showMaintenanceHistory() {
+        String sql = "SELECT * FROM maintenance ORDER BY created_at DESC";
+        try {
+            executeQuery(sql, rs -> {
+                boolean empty = true;
+                while (rs.next()) {
+                    empty = false;
+                    System.out.println("Desc: " + rs.getString("description") +
+                            " | Cost: " + rs.getDouble("cost") +
+                            " | By: " + rs.getString("added_by") +
+                            " | At: " + rs.getString("created_at"));
+                }
+                if (empty) System.out.println("No maintenance history.");
+                return null;
+            });
+        } catch (SQLException e) {
+            System.out.println("Invalid");
+        }
+    }
+
+    public static void addBills(double electricityAmount, double waterAmount) {
+        String sql = "INSERT INTO bills(description, amount, date) VALUES(?,?,date('now'))";
+        try {
+            executeUpdate(sql, "Electricity", electricityAmount);
+            executeUpdate(sql, "Water", waterAmount);
+        } catch (SQLException e) {
+            System.out.println("Invalid");
+        }
+    }
+
+    public static void showBills() {
+        String sql = "SELECT * FROM bills ORDER BY date DESC, id DESC";
+        try {
+            executeQuery(sql, rs -> {
+                boolean empty = true;
+                while (rs.next()) {
+                    empty = false;
+                    System.out.println("ID: " + rs.getInt("id") +
+                            " | Desc: " + rs.getString("description") +
+                            " | Amount: " + rs.getDouble("amount") +
+                            " | Date: " + rs.getString("date"));
+                }
+                if (empty) System.out.println("No bills found.");
+                return null;
+            });
+        } catch (SQLException e) {
+            System.out.println("Invalid");
+        }
+    }
+
+    public static void printProfitReport() {
+        String sqlIncome = "SELECT IFNULL(SUM(total_amount), 0.0) as total FROM bookings";
+        String sqlExpense = "SELECT IFNULL(SUM(cost), 0.0) as total FROM maintenance";
+        String sqlBills = "SELECT IFNULL(SUM(amount), 0.0) as total FROM bills";
+        String sqlSalaries = "SELECT IFNULL(SUM(salary), 0.0) as total FROM employees";
+
+        try {
+            Double income = executeQuery(sqlIncome, rs -> rs.next() ? rs.getDouble("total") : 0.0);
+            Double expense = executeQuery(sqlExpense, rs -> rs.next() ? rs.getDouble("total") : 0.0);
+            Double bills = executeQuery(sqlBills, rs -> rs.next() ? rs.getDouble("total") : 0.0);
+            Double salaries = executeQuery(sqlSalaries, rs -> rs.next() ? rs.getDouble("total") : 0.0);
+
+            if (income == null) income = 0.0;
+            if (expense == null) expense = 0.0;
+            if (bills == null) bills = 0.0;
+            if (salaries == null) salaries = 0.0;
+
+            double totalExpenses = expense + bills + salaries;
+            double grossProfit = income - totalExpenses;
+
+            double tax = 0.0;
+            if (grossProfit > 0) {
+                tax = roundTwoDecimals(grossProfit * 0.30);
+            }
+            double netProfit = roundTwoDecimals(grossProfit - tax);
+
+            System.out.printf("Total Income: %.2f%n", income);
+            System.out.printf("Maintenance Expenses: %.2f%n", expense);
+            System.out.printf("Bills: %.2f%n", bills);
+            System.out.printf("Employees salaries (total): %.2f%n", salaries);
+            System.out.printf("Total Expenses: %.2f%n", totalExpenses);
+            System.out.printf("Gross Profit (before tax): %.2f%n", grossProfit);
+            System.out.printf("Tax (30%% if positive): %.2f%n", tax);
+            System.out.printf("Net Profit: %.2f%n", netProfit);
+        } catch (SQLException e) {
+            System.out.println("Invalid");
+        }
+    }
+
+    public static synchronized void addToCompanyIncome(BigDecimal amount) {
+        String select = "SELECT value FROM company_settings WHERE key='total_income'";
+        try {
+            String current = executeQuery(select, rs -> rs.next() ? rs.getString("value") : null);
+            BigDecimal currentVal = (current == null) ? BigDecimal.ZERO : new BigDecimal(current);
+            BigDecimal next = currentVal.add(amount).setScale(2, RoundingMode.HALF_UP);
+            String upsert = "INSERT OR REPLACE INTO company_settings(key, value) VALUES('total_income', ?)";
+            executeUpdate(upsert, next.toPlainString());
+        } catch (SQLException e) {
+            System.out.println("Invalid");
+        }
+    }
+
+    public static double getTotalIncomeFromDB() {
+        String sql = "SELECT value FROM company_settings WHERE key='total_income'";
+        try {
+            String val = executeQuery(sql, rs -> rs.next() ? rs.getString("value") : null);
+            if (val == null) {
+                // fallback to computing from bookings.total_amount
+                String sqlBookings = "SELECT IFNULL(SUM(total_amount), 0.0) as total FROM bookings";
+                Double income = executeQuery(sqlBookings, rs -> rs.next() ? rs.getDouble("total") : 0.0);
+                return (income == null) ? 0.0 : roundTwoDecimals(income);
+            }
+            return new BigDecimal(val).setScale(2, RoundingMode.HALF_UP).doubleValue();
+        } catch (SQLException e) {
+            System.out.println("Invalid");
+            return 0.0;
+        }
+    }
+    private static double roundTwoDecimals(double v) {
+        return Math.round(v * 100.0) / 100.0;
     }
 }
