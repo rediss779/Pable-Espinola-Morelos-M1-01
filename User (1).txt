@@ -1,21 +1,27 @@
 public class User {
     private final String USERNAME;
     private final String PASSWORD;
+    private final String CATEGORY;
 
-    private User(Builder builder){
-        this.USERNAME = builder.USERNAME;
-        this.PASSWORD = builder.PASSWORD;
+    private User(Builder b) {
+        this.USERNAME = b.USERNAME;
+        this.PASSWORD = b.PASSWORD;
+        this.CATEGORY = b.CATEGORY;
     }
 
-    public String getUSERNAME(){ return USERNAME; }
-    public String getPASSWORD(){ return PASSWORD; }
+    public String getUSERNAME() { return USERNAME; }
+    public String getPASSWORD() { return PASSWORD; }
+    public String getCATEGORY() { return CATEGORY; }
 
-    public static class Builder{
+    public static class Builder {
         private String USERNAME;
         private String PASSWORD;
+        private String CATEGORY = "normal";
 
-        public Builder setUSERNAME(String username){ this.USERNAME = username; return this; }
-        public Builder setPASSWORD(String password){ this.PASSWORD = password; return this; }
-        public User build(){ return new User(this); }
+        public Builder setUSERNAME(String u) { this.USERNAME = u; return this; }
+        public Builder setPASSWORD(String p) { this.PASSWORD = p; return this; }
+        public Builder setCATEGORY(String c) { this.CATEGORY = c; return this; }
+
+        public User build() { return new User(this); }
     }
 }
