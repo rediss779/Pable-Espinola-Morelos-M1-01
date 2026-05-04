@@ -1,65 +1,76 @@
-import java.time.LocalDate;
-import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
-
 public class Booking {
-    private final int ROOMNUMBER;
+    private final int ID;
     private final String USERNAME;
     private final String TYPE;
     private final String DATE;
     private final String TIMEIN;
     private final String TIMEOUT;
     private final String STATUS;
+    private final int ROOMNUMBER;
+    private final double TOTALAMOUNT;
 
-    private Booking(Builder builder){
-        this.ROOMNUMBER = builder.ROOMNUMBER;
-        this.USERNAME = builder.USERNAME;
-        this.TYPE = builder.TYPE;
-        this.DATE = builder.DATE;
-        this.TIMEIN = builder.TIMEIN;
-        this.TIMEOUT = builder.TIMEOUT;
-        this.STATUS = builder.STATUS;
+    private Booking(Builder b) {
+        this.ID = b.ID;
+        this.USERNAME = b.USERNAME;
+        this.TYPE = b.TYPE;
+        this.DATE = b.DATE;
+        this.TIMEIN = b.TIMEIN;
+        this.TIMEOUT = b.TIMEOUT;
+        this.STATUS = b.STATUS;
+        this.ROOMNUMBER = b.ROOMNUMBER;
+        this.TOTALAMOUNT = b.TOTALAMOUNT;
     }
 
-    public int getROOMNUMBER(){ return ROOMNUMBER; }
-    public String getUSERNAME(){ return USERNAME; }
-    public String getTYPE(){ return TYPE; }
-    public String getDATE(){ return DATE; }
-    public String getTIMEIN(){ return TIMEIN; }
-    public String getTIMEOUT(){ return TIMEOUT; }
-    public String getSTATUS(){ return STATUS; }
-
-    public static boolean isValidDate(String input) {
-        try {
-            LocalDate date = LocalDate.parse(input, DateTimeFormatter.ISO_DATE);
-            return !date.isBefore(LocalDate.now());
-        } catch (DateTimeParseException e) { return false; }
-    }
-
-    public static boolean isValidTime(String input) {
-        try {
-            LocalTime.parse(input, DateTimeFormatter.ofPattern("HH:mm"));
-            return true;
-        } catch (DateTimeParseException e) { return false; }
-    }
+    // getters
+    public int getID() { return ID; }
+    public String getUSERNAME() { return USERNAME; }
+    public String getTYPE() { return TYPE; }
+    public String getDATE() { return DATE; }
+    public String getTIMEIN() { return TIMEIN; }
+    public String getTIMEOUT() { return TIMEOUT; }
+    public String getSTATUS() { return STATUS; }
+    public int getROOMNUMBER() { return ROOMNUMBER; }
+    public double getTOTALAMOUNT() { return TOTALAMOUNT; }
 
     public static class Builder {
-        private int ROOMNUMBER = 0;
+        private int ID = 0;
         private String USERNAME;
         private String TYPE;
         private String DATE;
         private String TIMEIN;
         private String TIMEOUT;
         private String STATUS;
+        private int ROOMNUMBER;
+        private double TOTALAMOUNT = 0.0;
 
-        public Builder setROOMNUMBER(int roomNumber){ this.ROOMNUMBER = roomNumber; return this; }
-        public Builder setUSERNAME(String username){ this.USERNAME=username; return this; }
-        public Builder setTYPE(String type){ this.TYPE=type; return this; }
-        public Builder setDATE(String date){ this.DATE=date; return this; }
-        public Builder setTIMEIN(String timeIn){ this.TIMEIN=timeIn; return this; }
-        public Builder setTIMEOUT(String timeOut){ this.TIMEOUT=timeOut; return this; }
-        public Builder setSTATUS(String status){ this.STATUS=status; return this; }
-        public Booking build(){ return new Booking(this); }
+        public Builder setID(int id) { this.ID = id; return this; }
+        public Builder setUSERNAME(String u) { this.USERNAME = u; return this; }
+        public Builder setTYPE(String t) { this.TYPE = t; return this; }
+        public Builder setDATE(String d) { this.DATE = d; return this; }
+        public Builder setTIMEIN(String ti) { this.TIMEIN = ti; return this; }
+        public Builder setTIMEOUT(String to) { this.TIMEOUT = to; return this; }
+        public Builder setSTATUS(String s) { this.STATUS = s; return this; }
+        public Builder setROOMNUMBER(int r) { this.ROOMNUMBER = r; return this; }
+        public Builder setTOTALAMOUNT(double ta) { this.TOTALAMOUNT = ta; return this; }
+
+        public Booking build() { return new Booking(this); }
+    }
+
+    public static boolean isValidDate(String d) {
+        try {
+            java.time.LocalDate.parse(d);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public static boolean isValidTime(String t) {
+        try {
+            java.time.LocalTime.parse(t, java.time.format.DateTimeFormatter.ofPattern("HH:mm"));
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 }
